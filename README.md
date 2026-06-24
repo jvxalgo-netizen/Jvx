@@ -1,16 +1,15 @@
 🚀 JVX Hybrid Terminal
-1. The Hook (One-Liner - Dhyan kheenchna ke liye)
+1. The Hook 
 
 "JVX is a next-generation hybrid algorithmic trading terminal designed to bring institutional-grade, emotionless execution to retail and pro-level traders."
 
-2. The Problem (Market mein kya dikkat hai?)
+2. The Problem 
 Retail trading space mein 90% traders apna paisa loose karte hain. Iska sabse bada kaaran strategy nahi, balki human emotions (Fear & Greed) aur manual execution ki slow speed hai. Retailers ke paas aisi koi unified hybrid screen nahi hai jahan woh complex risk management ke sath seamless automated options aur equity trading kar sakein.
 
-3. The Solution (JVX kya karta hai?)
+3. The Solution 
 JVX ek cutting-edge Python-backed terminal hai jo direct broker APIs ke through market se judta hai. Yeh manual trading ke darr ko hata kar pure data-driven execution karta hai. Ek deep financial aur accounting understanding ke sath banaya gaya yeh system, blind speculation ke bajaye strict mathematical risk-to-reward ratio par focus karta hai.
 
-4. Key Value Propositions (JVX ke Core Features)
-
+4. Key Value Propositions 
 Multi-Broker API Ecosystem: Seamless integration with top brokers like DhanHQ, Zerodha, and Angel One for ultra-fast order routing.
 
 Advanced Strategy Execution: Built-in high-win-rate algorithmic models including Multi-Confirmation Strategies, T3/UT Bots, and AI-optimized Super Trend logic.
