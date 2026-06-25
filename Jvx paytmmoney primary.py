@@ -1,81 +1,134 @@
 """
-JVX-JVX Hybrid Terminal v31.3 — PAYTM MONEY PRIMARY EDITION
-Features: Login Gate, Paytm Money Live Integration, T3 + UT Bot, Advanced Backtesting,
+JVX-JVX Hybrid Terminal v31.3 — Primary Trading Edition
+Features: Login Gate, Live Broker Integration, T3 + UT Bot, Advanced Backtesting,
           Multi-Confirmation Strategies, Smart Risk Management, Options Builder,
           Quantum Algo, Production Safety
 
 Author: Hitesh Vidhani
+Repo  : https://github.com/jvxalgo-netizen/Jvx
 """
 
 import json
 import warnings
-from xml.parsers.expat import errors
+import os
+import sys
+import importlib
+import hashlib
+import requests
+import time
+from io import BytesIO
+from datetime import datetime, timedelta
+
 import streamlit as st
 import pandas as pd
 import numpy as np
-import hashlib
-import requests
-from io import BytesIO
-import os
-import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit.components.v1 as components
-import time
 
-# ───────────────────────────────────────────
-# PAYTM MONEY IMPORT (PRIMARY) — FIXED
-# ───────────────────────────────────────────
-try:
-    from pyPMClient import PMClient
-    PAYTM_AVAILABLE = True
-except ImportError:
-    PAYTM_AVAILABLE = False
-    PMClient = None
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # ───────────────────────────────────────────
 # DHANHQ IMPORT
 # ───────────────────────────────────────────
 try:
-    from dhanhq import dhanhq
-    DHANHQ_AVAILABLE = True
-except ImportError:
+    dhanhq_spec = importlib.util.find_spec("dhanhq")
+    if dhanhq_spec is not None:
+        dhanhq_module = importlib.import_module("dhanhq")
+        dhanhq = getattr(dhanhq_module, "dhanhq", None)
+        DHANHQ_AVAILABLE = dhanhq is not None
+    else:
+        DHANHQ_AVAILABLE = False
+        dhanhq = None
+except Exception:
     DHANHQ_AVAILABLE = False
+    dhanhq = None
+
+# ───────────────────────────────────────────
+# YAHOO FINANCE IMPORT (PAPER TRADE & BACKTEST)
+# ───────────────────────────────────────────
+try:
+    yf_spec = importlib.util.find_spec("yfinance")
+    if yf_spec is not None:
+        yf = importlib.import_module("yfinance")
+        YFINANCE_AVAILABLE = True
+    else:
+        YFINANCE_AVAILABLE = False
+        yf = None
+except Exception:
+    YFINANCE_AVAILABLE = False
+    yf = None
 
 # ───────────────────────────────────────────
 # ML LIBRARY IMPORTS (FOR ML STRATEGY PIPELINE)
 # ───────────────────────────────────────────
 try:
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.metrics import accuracy_score, precision_score, recall_score, confusion_matrix
-    SKLEARN_AVAILABLE = True
-except ImportError:
+    sklearn_spec = importlib.util.find_spec("sklearn")
+    if sklearn_spec is not None:
+        sklearn_ensemble = importlib.import_module("sklearn.ensemble")
+        sklearn_metrics = importlib.import_module("sklearn.metrics")
+        RandomForestClassifier = sklearn_ensemble.RandomForestClassifier
+        accuracy_score = sklearn_metrics.accuracy_score
+        precision_score = sklearn_metrics.precision_score
+        recall_score = sklearn_metrics.recall_score
+        confusion_matrix = sklearn_metrics.confusion_matrix
+        SKLEARN_AVAILABLE = True
+    else:
+        SKLEARN_AVAILABLE = False
+        RandomForestClassifier = None
+        accuracy_score = None
+        precision_score = None
+        recall_score = None
+        confusion_matrix = None
+except Exception:
     SKLEARN_AVAILABLE = False
+    RandomForestClassifier = None
+    accuracy_score = None
+    precision_score = None
+    recall_score = None
+    confusion_matrix = None
 
 try:
-    from xgboost import XGBClassifier
-    XGBOOST_AVAILABLE = True
-except ImportError:
+    xgboost_spec = importlib.util.find_spec("xgboost")
+    if xgboost_spec is not None:
+        xgboost_module = importlib.import_module("xgboost")
+        XGBClassifier = xgboost_module.XGBClassifier
+        XGBOOST_AVAILABLE = True
+    else:
+        XGBOOST_AVAILABLE = False
+        XGBClassifier = None
+except Exception:
     XGBOOST_AVAILABLE = False
+    XGBClassifier = None
 
 try:
-    import tensorflow as tf
-    TENSORFLOW_AVAILABLE = True
-except ImportError:
+    tensorflow_spec = importlib.util.find_spec("tensorflow")
+    if tensorflow_spec is not None:
+        tf = importlib.import_module("tensorflow")
+        TENSORFLOW_AVAILABLE = True
+    else:
+        TENSORFLOW_AVAILABLE = False
+        tf = None
+except Exception:
     TENSORFLOW_AVAILABLE = False
+    tf = None
 
 try:
-    import stable_baselines3
-    RL_AVAILABLE = True
-except ImportError:
+    stable_baselines3_spec = importlib.util.find_spec("stable_baselines3")
+    if stable_baselines3_spec is not None:
+        stable_baselines3 = importlib.import_module("stable_baselines3")
+        RL_AVAILABLE = True
+    else:
+        RL_AVAILABLE = False
+        stable_baselines3 = None
+except Exception:
     RL_AVAILABLE = False
+    stable_baselines3 = None
 
 # ───────────────────────────────────────────
-# PAYTM MONEY SYMBOL MAPPING — PRODUCTION
+# SYMBOL MAPPING — PRODUCTION
 # ───────────────────────────────────────────
-PAYTM_SYMBOL_MAP = {
+SYMBOL_MAP = {
     "NIFTY 50": {"security_id": "13", "exchange": "NSE", "segment": "I"},
     "BANKNIFTY": {"security_id": "25", "exchange": "NSE", "segment": "I"},
     "FINNIFTY": {"security_id": "27", "exchange": "NSE", "segment": "I"},
@@ -163,8 +216,8 @@ PAYTM_SYMBOL_MAP = {
 }
 
 
-def get_paytm_security_id(symbol):
-    mapped = PAYTM_SYMBOL_MAP.get(symbol)
+def get_symbol_security_id(symbol):
+    mapped = SYMBOL_MAP.get(symbol)
     if mapped:
         return mapped["security_id"], mapped["exchange"], mapped["segment"]
     return symbol, "NSE", "E"
@@ -201,6 +254,130 @@ def get_dhan_security_id(symbol):
 
 
 # ───────────────────────────────────────────
+# YAHOO FINANCE SYMBOL MAPPING — PAPER & BACKTEST
+# ───────────────────────────────────────────
+YAHOO_SYMBOL_MAP = {
+    "NIFTY 50": "^NSEI",
+    "BANKNIFTY": "^NSEBANK",
+    "FINNIFTY": "^NSEI",
+    "SENSEX": "^BSESN",
+    "RELIANCE": "RELIANCE.NS",
+    "HDFCBANK": "HDFCBANK.NS",
+    "INFY": "INFY.NS",
+    "TCS": "TCS.NS",
+    "ICICIBANK": "ICICIBANK.NS",
+    "SBIN": "SBIN.NS",
+    "AXISBANK": "AXISBANK.NS",
+    "KOTAKBANK": "KOTAKBANK.NS",
+    "ITC": "ITC.NS",
+    "HINDUNILVR": "HINDUNILVR.NS",
+    "LT": "LT.NS",
+    "BAJFINANCE": "BAJFINANCE.NS",
+    "TATAMOTORS": "TATAMOTORS.NS",
+    "MARUTI": "MARUTI.NS",
+    "SUNPHARMA": "SUNPHARMA.NS",
+    "DRREDDY": "DRREDDY.NS",
+    "WIPRO": "WIPRO.NS",
+    "HCLTECH": "HCLTECH.NS",
+    "TECHM": "TECHM.NS",
+    "ADANIENT": "ADANIENT.NS",
+    "ADANIPORTS": "ADANIPORTS.NS",
+    "COALINDIA": "COALINDIA.NS",
+    "NTPC": "NTPC.NS",
+    "POWERGRID": "POWERGRID.NS",
+    "ONGC": "ONGC.NS",
+    "TATASTEEL": "TATASTEEL.NS",
+    "JSWSTEEL": "JSWSTEEL.NS",
+    "GRASIM": "GRASIM.NS",
+    "ULTRACEMCO": "ULTRACEMCO.NS",
+    "SHREECEM": "SHREECEM.NS",
+    "EICHERMOTORS": "EICHERMOTORS.NS",
+    "HEROMOTOCO": "HEROMOTOCO.NS",
+    "M&M": "M&M.NS",
+    "TITAN": "TITAN.NS",
+    "ASIANPAINT": "ASIANPAINT.NS",
+    "BRITANNIA": "BRITANNIA.NS",
+    "NESTLEIND": "NESTLEIND.NS",
+    "HINDALCO": "HINDALCO.NS",
+    "VEDL": "VEDL.NS",
+    "CIPLA": "CIPLA.NS",
+    "DIVISLAB": "DIVISLAB.NS",
+    "APOLLOHOSP": "APOLLOHOSP.NS",
+    "UPL": "UPL.NS",
+    "BAJAJFINSV": "BAJAJFINSV.NS",
+    "BAJAJ-AUTO": "BAJAJ-AUTO.NS",
+    "INDUSINDBK": "INDUSINDBK.NS",
+    "SBILIFE": "SBILIFE.NS",
+    "HDFCLIFE": "HDFCLIFE.NS",
+    "BPCL": "BPCL.NS",
+    "IOC": "IOC.NS",
+    "GAIL": "GAIL.NS",
+    "MCDOWELL-N": "MCDOWELL-N.NS",
+    "PIDILITIND": "PIDILITIND.NS",
+    "DABUR": "DABUR.NS",
+    "GODREJCP": "GODREJCP.NS",
+    "MARICO": "MARICO.NS",
+    "COLPAL": "COLPAL.NS",
+    "TATACONSUM": "TATACONSUM.NS",
+    "HAVELLS": "HAVELLS.NS",
+    "BERGEPAINT": "BERGEPAINT.NS",
+    "MUTHOOTFIN": "MUTHOOTFIN.NS",
+    "CHOLAFIN": "CHOLAFIN.NS",
+    "SRF": "SRF.NS",
+    "MRF": "MRF.NS",
+    "PAGEIND": "PAGEIND.NS",
+    "TORNTPHARM": "TORNTPHARM.NS",
+    "BOSCHLTD": "BOSCHLTD.NS",
+    "SIEMENS": "SIEMENS.NS",
+    "ABB": "ABB.NS",
+    "LTIM": "LTIM.NS",
+    "PERSISTENT": "PERSISTENT.NS",
+    "COFORGE": "COFORGE.NS",
+    "MPHASIS": "MPHASIS.NS",
+    "NAUKRI": "NAUKRI.NS",
+    "ZOMATO": "ZOMATO.NS",
+    "PAYTM": "PAYTM.NS",
+    "NYKAA": "NYKAA.NS",
+    "POLICYBZR": "POLICYBZR.NS",
+    "DELHIVERY": "DELHIVERY.NS",
+    "LICI": "LICI.NS",
+}
+
+
+def get_yahoo_ticker(symbol):
+    return YAHOO_SYMBOL_MAP.get(symbol, f"{symbol}.NS")
+
+
+def fetch_yahoo_data(symbol, period="6mo", interval="1d"):
+    if not YFINANCE_AVAILABLE or yf is None:
+        return None
+    try:
+        ticker_str = get_yahoo_ticker(symbol)
+        ticker = yf.Ticker(ticker_str)
+        data = ticker.history(period=period, interval=interval, auto_adjust=True)
+        if data is None or data.empty:
+            return None
+        data = data.reset_index()
+        data.columns = [str(c).replace(" ", "_") for c in data.columns]
+        col_map = {}
+        for c in data.columns:
+            up = c.upper()
+            if up in ("OPEN", "HIGH", "LOW", "CLOSE", "VOLUME", "DATE", "DATETIME"):
+                col_map[c] = up
+        data = data.rename(columns=col_map)
+        needed = ["Open", "High", "Low", "Close", "Volume"]
+        available = [c for c in needed if c in data.columns]
+        if "Close" not in available:
+            return None
+        data = data[available].copy()
+        data = data.dropna().reset_index(drop=True)
+        return data
+    except Exception as e:
+        st.warning(f"Yahoo Finance fetch failed for {symbol}: {e}")
+        return None
+
+
+# ───────────────────────────────────────────
 # PRODUCTION SAFETY & VALIDATION
 # ───────────────────────────────────────────
 MARKET_OPEN = datetime.strptime("09:15", "%H:%M").time()
@@ -228,12 +405,8 @@ def validate_order(symbol, qty, side, order_type, price, broker_client=None):
     if not open_ok:
         errors.append(f"Market not open: {msg}")
 
-    broker = st.session_state.get('selected_broker', 'PAYTM')
-    if broker == 'PAYTM':
-        sec_id, exchange, segment = get_paytm_security_id(symbol)
-        if sec_id == symbol and symbol not in PAYTM_SYMBOL_MAP:
-            warnings.append(f"Symbol '{symbol}' not mapped in Paytm Money — verify security_id before live trading")
-    elif broker == 'DHANHQ':
+    broker = st.session_state.get('selected_broker', 'DHANHQ')
+    if broker == 'DHANHQ':
         sec_id, exchange, segment = get_dhan_security_id(symbol)
         if sec_id == symbol and symbol not in DHAN_SYMBOL_MAP:
             warnings.append(f"Symbol '{symbol}' not mapped — verify security_id before live trading")
@@ -251,12 +424,8 @@ def validate_order(symbol, qty, side, order_type, price, broker_client=None):
             errors.append("Broker client not connected — cannot place LIVE order")
         if broker_client:
             try:
-                if broker == 'PAYTM':
-                    funds = broker_client.funds_summary()
-                    available = funds.get('availableBalance', 0) if isinstance(funds, dict) else 0
-                else:
-                    funds = broker_client.get_fund_limit()
-                    available = funds.get('availabelBalance', 0) if isinstance(funds, dict) else 0
+                funds = broker_client.get_fund_limit()
+                available = funds.get('availabelBalance', 0) if isinstance(funds, dict) else 0
                 estimated_margin = qty * price * 0.2 if price > 0 else qty * 100
                 if available < estimated_margin:
                     warnings.append(f"Low margin: ₹{available:,.0f} available, ~₹{estimated_margin:,.0f} required")
@@ -291,12 +460,11 @@ def safe_api_call(func, *args, fallback_return=None, max_retries=2, **kwargs):
             return fallback_return
     return fallback_return
 
-
 # ───────────────────────────────────────────
 # 1. PAGE CONFIG & WHITE THEME
 # ───────────────────────────────────────────
 st.set_page_config(
-    page_title="JVX Trading Terminal v31.3 — Paytm Money",
+    page_title="JVX Trading Terminal v31.3",
     layout="wide",
     page_icon="📈",
     initial_sidebar_state="expanded"
@@ -495,8 +663,8 @@ if not st.session_state.authenticated:
             <div class="sparkle sparkle-3">✨</div>
             <div class="sparkle sparkle-4">⭐</div>
             <h1 class="login-brand">JVX</h1>
-            <p class="login-subtitle">Paytm Money Pro Terminal</p>
-            <p style="color:#a78bfa; font-size:12px; margin:0; font-style:italic;">🧙‍♂️ Abracadabra... Your trading magic begins here</p>
+            <p class="login-subtitle">JVX Trading Terminal</p>
+            <p style="color:#a78bfa; font-size:12px; margin:0; font-style:italic;">✨ Welcome to your algo trading command center</p>
         </div>
         """, unsafe_allow_html=True)
         with st.form("login_form"):
@@ -533,18 +701,8 @@ defaults = {
     'alert_history': [],
     'last_alert_signature': None,
     'market_data': {},
-    'live_data_source': 'SIMULATED',
-    'selected_broker': 'PAYTM',
-    # Paytm Money
-    'paytm_api_key': '',
-    'paytm_api_secret': '',
-    'paytm_access_token': '',
-    'paytm_public_access_token': '',
-    'paytm_read_access_token': '',
-    'paytm_connected': False,
-    'paytm_client': None,
-    'paytm_funds': None,
-    'paytm_positions': None,
+    'live_data_source': 'YAHOO',
+    'selected_broker': 'DHANHQ',
     # DhanHQ
     'dhan_client_id': '',
     'dhan_access_token': '',
@@ -586,168 +744,6 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
-
-# ───────────────────────────────────────────
-# 4. PAYTM MONEY CLIENT WRAPPER (PRIMARY) — FIXED
-# ───────────────────────────────────────────
-class PaytmMoneyManager:
-    def __init__(self):
-        self.client = None
-
-    def connect(self, api_key, api_secret, request_token=None):
-        if not PAYTM_AVAILABLE:
-            return False, "pyPMClient library not installed. Run: pip install pyPMClient"
-        try:
-            self.client = PMClient(api_key=api_key, api_secret=api_secret)
-            if request_token:
-                session = self.client.generate_session(request_token=request_token)
-                # After generating session, tokens are automatically set internally
-                # But we can also extract them for storage
-            # Validate connection by fetching user details
-            user_details = self.client.get_user_details()
-            st.session_state.paytm_client = self.client
-            st.session_state.paytm_connected = True
-            return True, user_details
-        except Exception as e:
-            st.session_state.paytm_connected = False
-            return False, str(e)
-
-    def connect_with_tokens(self, api_key, api_secret, access_token, public_access_token=None, read_access_token=None):
-        if not PAYTM_AVAILABLE:
-            return False, "pyPMClient library not installed. Run: pip install pyPMClient"
-        try:
-            self.client = PMClient(
-                api_key=api_key, 
-                api_secret=api_secret,
-                access_token=access_token,
-                public_access_token=public_access_token,
-                read_access_token=read_access_token
-            )
-            # Validate connection
-            user_details = self.client.get_user_details()
-            st.session_state.paytm_client = self.client
-            st.session_state.paytm_connected = True
-            return True, user_details
-        except Exception as e:
-            st.session_state.paytm_connected = False
-            return False, str(e)
-
-    def get_quote(self, symbol):
-        if not self.client:
-            return None
-        sec_id, exchange, segment = get_paytm_security_id(symbol)
-        try:
-            # Use get_live_market_data API (correct pyPMClient method)
-            preferences = [{
-                "actionType": "ADD",
-                "modeType": "FULL",
-                "scripType": "INDEX" if segment == "I" else "EQUITY",
-                "exchangeType": exchange,
-                "scripId": sec_id
-            }]
-            quote = self.client.get_live_market_data("FULL", preferences)
-            return quote
-        except Exception as e:
-            return {"error": str(e)}
-
-    def place_order(self, symbol, qty, side, order_type='MARKET', price=0.0, product_type='I'):
-        if not self.client:
-            return {"success": False, "error": "Paytm Money not connected"}
-        sec_id, exchange, segment = get_paytm_security_id(symbol)
-        errors, warnings = validate_order(symbol, qty, side, order_type, price, self.client)
-        if errors:
-            return {"success": False, "error": " | ".join(errors), "warnings": warnings}
-        try:
-            txn_type = "B" if side == "BUY" else "S"
-            order_type_map = {'MARKET': 'MKT', 'LIMIT': 'LMT', 'SL': 'SL', 'SL-M': 'SL-M'}
-            pm_order_type = order_type_map.get(order_type, 'MKT')
-
-            if st.session_state.get('exec_mode') == 'PAPER':
-                order_id = f"PAYTM_PAPER{datetime.now().strftime('%H%M%S')}{np.random.randint(1000,9999)}"
-                return {
-                    "success": True,
-                    "order_id": order_id,
-                    "symbol": symbol,
-                    "security_id": sec_id,
-                    "side": side,
-                    "type": order_type,
-                    "quantity": qty,
-                    "price": price,
-                    "status": "PAPER_EXECUTED",
-                    "timestamp": datetime.now().strftime("%H:%M:%S"),
-                    "warnings": warnings
-                }
-
-            # Correct pyPMClient order placement method signature
-            order_response = self.client.place_order(
-                txn_type=txn_type,
-                exchange=exchange,
-                segment=segment,
-                product=product_type,
-                security_id=sec_id,
-                quantity=qty,
-                validity="DAY",
-                order_type=pm_order_type,
-                price=price if price > 0 else 0,
-                source="N",
-                off_mkt_flag="false"
-            )
-
-            if order_response:
-                st.session_state.last_order_time = datetime.now()
-                return {
-                    "success": True,
-                    "order_id": order_response.get('order_no', 'UNKNOWN'),
-                    "symbol": symbol,
-                    "security_id": sec_id,
-                    "side": side,
-                    "type": order_type,
-                    "quantity": qty,
-                    "price": price,
-                    "status": order_response.get('status', 'PENDING'),
-                    "timestamp": datetime.now().strftime("%H:%M:%S"),
-                    "raw_response": order_response,
-                    "warnings": warnings
-                }
-            return {"success": False, "error": "Paytm Money order placement failed", "warnings": warnings}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    def get_positions(self):
-        if not self.client:
-            return None
-        try:
-            return self.client.position()
-        except:
-            return None
-
-    def get_holdings(self):
-        if not self.client:
-            return None
-        try:
-            return self.client.user_holdings_data()
-        except:
-            return None
-
-    def get_fund_limits(self):
-        if not self.client:
-            return None
-        try:
-            # Correct pyPMClient method: funds_summary()
-            return self.client.funds_summary()
-        except:
-            return None
-
-    def get_order_book(self):
-        if not self.client:
-            return None
-        try:
-            return self.client.order_book()
-        except:
-            return None
-
-
-paytm_manager = PaytmMoneyManager()
 
 # ───────────────────────────────────────────
 # DHANHQ CLIENT WRAPPER
@@ -851,6 +847,11 @@ class DhanHQManager:
             return None
         return safe_api_call(self.client.get_fund_limit, fallback_return=None)
 
+    def get_order_book(self):
+        if not self.client:
+            return None
+        return safe_api_call(self.client.get_order_list, fallback_return=None)
+
 
 dhan_manager = DhanHQManager()
 
@@ -859,27 +860,23 @@ dhan_manager = DhanHQManager()
 # ───────────────────────────────────────────
 def place_broker_order(symbol, qty, side, order_type='MARKET', price=0.0):
     """Route order to selected broker."""
-    broker = st.session_state.get('selected_broker', 'PAYTM')
-    if broker == 'PAYTM':
-        return paytm_manager.place_order(symbol, qty, side, order_type, price)
-    elif broker == 'DHANHQ':
+    broker = st.session_state.get('selected_broker', 'DHANHQ')
+    if broker == 'DHANHQ':
         return dhan_manager.place_order(symbol, qty, side, order_type, price)
     else:
-        return paytm_manager.place_order(symbol, qty, side, order_type, price)
+        return dhan_manager.place_order(symbol, qty, side, order_type, price)
 
 
 def get_broker_quote(symbol):
     """Get quote from selected broker."""
-    broker = st.session_state.get('selected_broker', 'PAYTM')
-    if broker == 'PAYTM':
-        return paytm_manager.get_quote(symbol)
-    elif broker == 'DHANHQ':
+    broker = st.session_state.get('selected_broker', 'DHANHQ')
+    if broker == 'DHANHQ':
         return dhan_manager.get_quote(symbol)
     else:
-        return paytm_manager.get_quote(symbol)
+        return dhan_manager.get_quote(symbol)
 
 # ───────────────────────────────────────────
-# 5. MARKET DATA ENGINE
+# MARKET DATA ENGINE (YAHOO FINANCE + SIMULATED FALLBACK)
 # ───────────────────────────────────────────
 def _generate_simulated_data(sym):
     rng = np.random.default_rng(42)
@@ -897,27 +894,17 @@ def _generate_simulated_data(sym):
 
 def init_market_data():
     if not st.session_state.market_data:
-        if st.session_state.get('paytm_connected') and paytm_manager.client:
-            st.session_state.live_data_source = 'PAYTM'
+        # Primary: Yahoo Finance for paper trading & backtest historical data
+        if YFINANCE_AVAILABLE:
+            st.session_state.live_data_source = 'YAHOO'
             for sym in st.session_state.watchlist:
-                quote = paytm_manager.get_quote(sym)
-                if quote and 'error' not in quote:
-                    try:
-                        ltp = float(quote.get('lastPrice', 0)) or float(quote.get('close', 2500))
-                        df = pd.DataFrame({
-                            "Close": [ltp] * 300,
-                            "Volume": [np.random.randint(10000, 50000)] * 300
-                        })
-                        noise = np.cumsum(np.random.normal(0, ltp*0.001, 300))
-                        df['Close'] = ltp + noise
-                        df['Open'] = df['Close'] - np.random.normal(0, ltp*0.0005, 300)
-                        df['High'] = df[['Open', 'Close']].max(axis=1) + abs(np.random.normal(0, ltp*0.001, 300))
-                        df['Low'] = df[['Open', 'Close']].min(axis=1) - abs(np.random.normal(0, ltp*0.001, 300))
-                        st.session_state.market_data[sym] = df
-                    except Exception:
-                        _generate_simulated_data(sym)
+                df = fetch_yahoo_data(sym, period="6mo", interval="1d")
+                if df is not None and not df.empty:
+                    st.session_state.market_data[sym] = df
                 else:
+                    st.session_state.live_data_source = 'SIMULATED'
                     _generate_simulated_data(sym)
+        # Secondary: DhanHQ live quotes if connected
         elif st.session_state.get('dhan_connected') and dhan_manager.client:
             st.session_state.live_data_source = 'DHANHQ'
             for sym in st.session_state.watchlist:
@@ -960,27 +947,8 @@ def _simulate_symbol(sym):
 
 
 def simulate_tick():
-    if st.session_state.get('paytm_connected') and paytm_manager.client:
-        for sym in st.session_state.watchlist:
-            quote = paytm_manager.get_quote(sym)
-            if quote and 'error' not in quote:
-                try:
-                    ltp = float(quote.get('lastPrice', 0)) or float(quote.get('close', 0))
-                    if ltp > 0:
-                        df = st.session_state.market_data[sym]
-                        new_row = pd.DataFrame({
-                            "Close": [ltp],
-                            "Volume": [np.random.randint(10000, 50000)],
-                            "Open": [df.iloc[-1]['Close']],
-                            "High": [ltp * 1.002],
-                            "Low": [ltp * 0.998]
-                        })
-                        st.session_state.market_data[sym] = pd.concat([df, new_row], ignore_index=True).tail(500)
-                        continue
-                except:
-                    pass
-            _simulate_symbol(sym)
-    elif st.session_state.get('dhan_connected') and dhan_manager.client:
+    # If DhanHQ connected, try to refresh from live quotes
+    if st.session_state.get('dhan_connected') and dhan_manager.client:
         for sym in st.session_state.watchlist:
             quote = dhan_manager.get_quote(sym)
             if quote and 'error' not in quote:
@@ -1055,11 +1023,6 @@ class StrategyEngine:
         return df
 
     def calculate_supertrend(self, df, atr_period=10, multiplier=3.0):
-        """
-        Standard Supertrend indicator (HL2 ± multiplier*ATR with sticky final
-        bands). Adds 'Supertrend' (the line level) and 'Supertrend_Direction'
-        (1 = uptrend, -1 = downtrend) columns to df.
-        """
         df = df.copy()
         high_low = df['High'] - df['Low']
         high_close = (df['High'] - df['Close'].shift()).abs()
@@ -1438,29 +1401,24 @@ def render_options_card(symbol, ltp, signal, confidence):
 # ───────────────────────────────────────────
 # 7B. COST & BROKERAGE CALCULATOR ENGINE
 # ───────────────────────────────────────────
-# Defaults reflect Paytm Money's published brokerage pricing plus standard
-# NSE / SEBI / Government levies (incl. FY2026-27 STT rates on F&O effective
-# 1-Apr-2026). Brokers and the government revise these periodically, so every
-# rate below is editable from the Cost & Brokerage Calculator UI — treat these
-# as a planning estimate, not an official contract note.
-GST_RATE_PCT = 18.0  # GST on (brokerage + exchange txn charges + SEBI fee) only — STT & stamp duty are taxes, not taxed again
+GST_RATE_PCT = 18.0
 
 CHARGE_DEFAULTS = {
     "Equity Delivery": {
         "brokerage_type": "flat",
-        "brokerage_flat": 0.0,            # Paytm Money: brokerage-free delivery
+        "brokerage_flat": 0.0,
         "brokerage_pct": 0.0,
-        "stt_buy_pct": 0.1, "stt_sell_pct": 0.1,     # both sides
-        "exch_txn_pct": 0.00297,                      # NSE, both sides, on turnover
-        "stamp_duty_buy_pct": 0.015,                  # buy side only (Maharashtra default; varies by state)
-        "sebi_pct": 0.0001,                           # both sides
-        "dp_charge": 20.0,                            # CDSL + broker, sell side only, per scrip per day
+        "stt_buy_pct": 0.1, "stt_sell_pct": 0.1,
+        "exch_txn_pct": 0.00297,
+        "stamp_duty_buy_pct": 0.015,
+        "sebi_pct": 0.0001,
+        "dp_charge": 20.0,
     },
     "Equity Intraday": {
         "brokerage_type": "lower_of_flat_pct",
         "brokerage_flat": 10.0,
-        "brokerage_pct": 0.05,                        # whichever of flat/pct is LOWER, per executed order
-        "stt_buy_pct": 0.0, "stt_sell_pct": 0.025,    # sell side only
+        "brokerage_pct": 0.05,
+        "stt_buy_pct": 0.0, "stt_sell_pct": 0.025,
         "exch_txn_pct": 0.00297,
         "stamp_duty_buy_pct": 0.003,
         "sebi_pct": 0.0001,
@@ -1470,8 +1428,8 @@ CHARGE_DEFAULTS = {
         "brokerage_type": "flat",
         "brokerage_flat": 10.0,
         "brokerage_pct": 0.0,
-        "stt_buy_pct": 0.0, "stt_sell_pct": 0.05,     # sell side only — FY2026-27 rate (raised from 0.02%)
-        "exch_txn_pct": 0.00173,                      # NSE, each side, on turnover
+        "stt_buy_pct": 0.0, "stt_sell_pct": 0.05,
+        "exch_txn_pct": 0.00173,
         "stamp_duty_buy_pct": 0.002,
         "sebi_pct": 0.0001,
         "dp_charge": 0.0,
@@ -1480,8 +1438,8 @@ CHARGE_DEFAULTS = {
         "brokerage_type": "flat",
         "brokerage_flat": 15.0,
         "brokerage_pct": 0.0,
-        "stt_buy_pct": 0.0, "stt_sell_pct": 0.15,     # sell side, on premium — FY2026-27 rate (raised from 0.125%)
-        "exch_txn_pct": 0.03503,                      # NSE, each side, on premium turnover
+        "stt_buy_pct": 0.0, "stt_sell_pct": 0.15,
+        "exch_txn_pct": 0.03503,
         "stamp_duty_buy_pct": 0.003,
         "sebi_pct": 0.0001,
         "dp_charge": 0.0,
@@ -1490,7 +1448,6 @@ CHARGE_DEFAULTS = {
 
 
 def calc_brokerage_leg(cfg, leg_turnover):
-    """Brokerage for ONE executed order (one leg — buy or sell), per segment rule."""
     if cfg["brokerage_type"] == "flat":
         return cfg["brokerage_flat"]
     if cfg["brokerage_type"] == "lower_of_flat_pct":
@@ -1502,11 +1459,6 @@ def calc_brokerage_leg(cfg, leg_turnover):
 
 
 def calculate_trade_charges(segment, buy_price, sell_price, quantity, overrides=None):
-    """
-    Computes the full round-trip (buy leg + sell leg) cost of a trade for the
-    given segment, using Paytm Money-style defaults (overridable). Returns a
-    dict with the full charge breakdown plus gross/net P&L and breakeven price.
-    """
     cfg = dict(CHARGE_DEFAULTS[segment])
     if overrides:
         cfg.update(overrides)
@@ -1606,9 +1558,6 @@ class QuantumAlgo:
 # ───────────────────────────────────────────
 # 8B. ML STRATEGY PIPELINE ENGINE
 # ───────────────────────────────────────────
-# Step 1 (Data) + Step 2 (Feature Engineering) helper — builds Trend /
-# Momentum / Volatility features on top of the same indicators used by the
-# main StrategyEngine, then a next-bar-direction label for supervised training.
 ML_FEATURE_GROUPS = {
     "Trend":      ["EMA_DIFF", "EMA_SLOPE", "PRICE_VS_TREND"],
     "Momentum":   ["RSI_C", "MACD_HIST_N", "ROC_5"],
@@ -1618,7 +1567,6 @@ ML_FEATURE_COLS = ML_FEATURE_GROUPS["Trend"] + ML_FEATURE_GROUPS["Momentum"] + M
 
 
 def ml_build_features(df):
-    """Step 1 + Step 2: indicators -> Trend / Momentum / Volatility features + label."""
     feat = engine.calculate_indicators(df.copy())
     feat['EMA_DIFF'] = (feat['EMA_FAST'] - feat['EMA_SLOW']) / feat['Close']
     feat['EMA_SLOPE'] = feat['EMA_TREND'].diff(5) / feat['Close']
@@ -1634,11 +1582,6 @@ def ml_build_features(df):
 
 
 def ml_train_model(feat_df, model_type="Random Forest", n_estimators=150, test_size=0.2):
-    """
-    Step 3: trains a classifier on engineered features to predict next-bar
-    direction (1 = up, 0 = down). Uses a CHRONOLOGICAL split (no shuffle) —
-    shuffling time series for train/test would leak future information.
-    """
     n = len(feat_df)
     split = int(n * (1 - test_size))
     train_df, test_df = feat_df.iloc[:split], feat_df.iloc[split:]
@@ -1670,13 +1613,9 @@ def ml_train_model(feat_df, model_type="Random Forest", n_estimators=150, test_s
 
 
 def ml_compute_trade_plan(latest_row, proba_up, threshold, atr_multiplier, rr_mode, rr_fixed):
-    """
-    Step 4 — Trade Engine: turns the model's probability into an entry
-    signal, an ATR-based stop loss, and a Risk:Reward-based target.
-    """
     entry = float(latest_row['Close'])
     atr = float(latest_row['ATR']) if not pd.isna(latest_row['ATR']) else entry * 0.01
-    confidence = max(proba_up, 1 - proba_up)  # how far the model leans from a coin-flip
+    confidence = max(proba_up, 1 - proba_up)
 
     if proba_up >= threshold:
         signal = "BUY"
@@ -1686,7 +1625,6 @@ def ml_compute_trade_plan(latest_row, proba_up, threshold, atr_multiplier, rr_mo
         signal = "WAIT"
 
     if rr_mode == "Dynamic (confidence-scaled)":
-        # Scales 1:1 at coin-flip confidence up to ~1:4 near full conviction.
         rr_ratio = round(1.0 + (confidence - 0.5) * 6, 2)
         rr_ratio = max(1.0, min(rr_ratio, 4.0))
     else:
@@ -1719,9 +1657,8 @@ st.sidebar.divider()
 
 st.sidebar.markdown("### 📡 Broker Status")
 
-# Broker Selector - ALL 4 BROKERS
-_broker_list = ["PAYTM", "DHANHQ", "ZERODHA", "ANGELONE"]
-_curr_broker = st.session_state.get('selected_broker', 'PAYTM')
+_broker_list = ["DHANHQ", "ZERODHA", "ANGELONE"]
+_curr_broker = st.session_state.get('selected_broker', 'DHANHQ')
 _broker_idx = _broker_list.index(_curr_broker) if _curr_broker in _broker_list else 0
 st.session_state.selected_broker = st.sidebar.selectbox(
     "Select Broker",
@@ -1729,14 +1666,7 @@ st.session_state.selected_broker = st.sidebar.selectbox(
     index=_broker_idx
 )
 
-if st.session_state.selected_broker == 'PAYTM':
-    if st.session_state.paytm_connected:
-        st.sidebar.markdown("<span class='status-connected'>🟢 Paytm Money Connected</span>", unsafe_allow_html=True)
-        if st.session_state.paytm_funds:
-            st.sidebar.caption(f"Funds: {st.session_state.paytm_funds}")
-    else:
-        st.sidebar.markdown("<span class='status-disconnected'>🔴 Paytm Money Disconnected</span>", unsafe_allow_html=True)
-elif st.session_state.selected_broker == 'DHANHQ':
+if st.session_state.selected_broker == 'DHANHQ':
     if st.session_state.dhan_connected:
         st.sidebar.markdown("<span class='status-connected'>🟢 DhanHQ Connected</span>", unsafe_allow_html=True)
         if st.session_state.dhan_funds:
@@ -1765,8 +1695,8 @@ else:
     st.sidebar.markdown(f"<span style='color:#e74c3c; font-weight:700;'>🔴 {market_msg}</span>", unsafe_allow_html=True)
 
 source = st.session_state.get('live_data_source', 'SIMULATED')
-if source == 'PAYTM':
-    st.sidebar.markdown("<span style='color:#00b894; font-size:12px;'>📡 Live Data: Paytm Money</span>", unsafe_allow_html=True)
+if source == 'YAHOO':
+    st.sidebar.markdown("<span style='color:#00b894; font-size:12px;'>📡 Live Data: Yahoo Finance</span>", unsafe_allow_html=True)
 elif source == 'DHANHQ':
     st.sidebar.markdown("<span style='color:#00b894; font-size:12px;'>📡 Live Data: DhanHQ</span>", unsafe_allow_html=True)
 elif source == 'ZERODHA':
@@ -1808,7 +1738,6 @@ menu = st.sidebar.radio(
         "💹 FII & DII Tracker",
         "📊 Volume & Dividend",
         "📲 Telegram Bot",
-        "💰 Paytm Money Connect",
         "🔐 DhanHQ Connect",
         "🔑 Zerodha Connect",
         "👼 Angel One Connect",
@@ -1825,9 +1754,7 @@ if st.sidebar.button("▶️ Refresh Live Data", type="primary", use_container_w
 
 st.session_state.exec_mode = st.sidebar.selectbox("Mode", ["PAPER", "LIVE"])
 if st.session_state.exec_mode == "LIVE":
-    if st.session_state.selected_broker == 'PAYTM' and not st.session_state.paytm_connected:
-        st.sidebar.warning("⚠️ Connect Paytm Money first for LIVE mode")
-    elif st.session_state.selected_broker == 'DHANHQ' and not st.session_state.dhan_connected:
+    if st.session_state.selected_broker == 'DHANHQ' and not st.session_state.dhan_connected:
         st.sidebar.warning("⚠️ Connect DhanHQ first for LIVE mode")
     else:
         st.sidebar.success(f"✅ LIVE mode ready ({st.session_state.selected_broker})")
@@ -1847,18 +1774,16 @@ def render_dashboard():
         <div class='brand-logo'>JV</div>
         <div>
             <h2 style='margin:0; color:#00d4aa;'>JVX</h2>
-            <p style='margin:0; color:#888; font-size:13px;'>Paytm Money Pro Terminal v31.3 🪄</p>
+            <p style='margin:0; color:#888; font-size:13px;'>JVX Trading Terminal v31.3 🪄</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Symbol Search + Timeframe Controls
     st.subheader("🔍 Symbol & Timeframe")
 
     col_search, col_tf, col_period, col_refresh = st.columns([2, 1, 1, 1])
 
     with col_search:
-        # Custom symbol search
         search_col1, search_col2 = st.columns([3, 1])
         with search_col1:
             custom_sym = st.text_input("🔎 Search Symbol (e.g. RELIANCE, AAPL, BTC-USD)", 
@@ -1872,8 +1797,12 @@ def render_dashboard():
                     st.session_state.custom_symbol = custom_sym.strip().upper()
                     if st.session_state.custom_symbol not in st.session_state.watchlist:
                         st.session_state.watchlist.append(st.session_state.custom_symbol)
-                    # Initialize data for new symbol
-                    _generate_simulated_data(st.session_state.custom_symbol)
+                    # Try Yahoo Finance first for new symbols
+                    df_yf = fetch_yahoo_data(st.session_state.custom_symbol, period="6mo", interval="1d")
+                    if df_yf is not None and not df_yf.empty:
+                        st.session_state.market_data[st.session_state.custom_symbol] = df_yf
+                    else:
+                        _generate_simulated_data(st.session_state.custom_symbol)
                     st.rerun()
 
         symbol = st.selectbox("📋 Or Select from Watchlist", st.session_state.watchlist, 
@@ -1899,8 +1828,8 @@ def render_dashboard():
             st.rerun()
 
     source = st.session_state.get('live_data_source', 'SIMULATED')
-    if source == 'PAYTM':
-        st.success(f"📡 Live Data: Paytm Money | {symbol} | {timeframe} | {period}")
+    if source == 'YAHOO':
+        st.success(f"📡 Live Data: Yahoo Finance | {symbol} | {timeframe} | {period}")
     elif source == 'DHANHQ':
         st.success(f"📡 Live Data: DhanHQ | {symbol} | {timeframe} | {period}")
     else:
@@ -2028,7 +1957,6 @@ def render_dashboard():
         gridwidth=1,
         gridcolor='rgba(0,0,0,0.05)'
     )
-    # For intraday timeframes, show time too
     if st.session_state.get('timeframe', '1d') in ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h']:
         fig.update_xaxes(tickformat='%H:%M<br>%d %b')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(0,0,0,0.05)')
@@ -2130,13 +2058,10 @@ def render_execution():
     if not open_ok:
         st.warning(f"⚠️ {market_msg}. Orders may be rejected by broker.")
 
-    broker = st.session_state.get('selected_broker', 'PAYTM')
+    broker = st.session_state.get('selected_broker', 'DHANHQ')
 
     if st.session_state.exec_mode == "LIVE":
-        if broker == 'PAYTM' and not st.session_state.paytm_connected:
-            st.error("🔴 Paytm Money not connected. Switch to PAPER mode or connect Paytm Money.")
-            return
-        elif broker == 'DHANHQ' and not st.session_state.dhan_connected:
+        if broker == 'DHANHQ' and not st.session_state.dhan_connected:
             st.error("🔴 DhanHQ not connected. Switch to PAPER mode or connect DhanHQ.")
             return
 
@@ -2186,10 +2111,10 @@ def render_execution():
                 st.error("❌ You must check the confirmation box to place a LIVE order.")
                 return
 
-            if broker == 'PAYTM':
-                errors, warnings = validate_order(sym, qty, side, otype, price, paytm_manager.client)
-            else:
+            if broker == 'DHANHQ':
                 errors, warnings = validate_order(sym, qty, side, otype, price, dhan_manager.client)
+            else:
+                errors, warnings = validate_order(sym, qty, side, otype, price, None)
 
             if errors:
                 st.error("🛑 Order blocked: Risk limit exceeded")
@@ -2239,8 +2164,8 @@ def render_ledger():
 
 def render_cost_calculator():
     st.header("💰 Cost & Brokerage Calculator")
-    st.caption("Estimate brokerage, STT, exchange charges, SEBI fees, stamp duty & GST for a trade — Paytm Money-style defaults, fully editable.")
-    st.info("ℹ️ Defaults reflect Paytm Money's published pricing and standard NSE/SEBI/Govt levies as of mid-2026 (incl. FY2026-27 STT rates on F&O, effective 1-Apr-2026). Rates change periodically and stamp duty varies by state — verify against your broker's official calculator/contract note before relying on this for accounting or tax filing.")
+    st.caption("Estimate brokerage, STT, exchange charges, SEBI fees, stamp duty & GST for a trade — Indian discount broker-style defaults, fully editable.")
+    st.info("ℹ️ Defaults reflect typical Indian discount broker pricing and standard NSE/SEBI/Govt levies as of mid-2026 (incl. FY2026-27 STT rates on F&O, effective 1-Apr-2026). Rates change periodically and stamp duty varies by state — verify against your broker's official calculator/contract note before relying on this for accounting or tax filing.")
 
     c1, c2, c3 = st.columns(3)
     segment = c1.selectbox("Segment", list(CHARGE_DEFAULTS.keys()), key="cc_segment")
@@ -2606,7 +2531,7 @@ def render_options_strategies():
         df = engine.generate_signals(raw_df)
         ltp = float(df.iloc[-1]['Close'])
         st.metric("Current LTP", f"₹{ltp:.2f}")
-        expiry_type = st.segmented_control("✅ Weekly / Monthly", options=["Weekly", "Monthly"], default="Weekly")
+        expiry_type = st.radio("✅ Weekly / Monthly", options=["Weekly", "Monthly"], horizontal=True)
         interval = get_strike_interval(instrument)
         atm_strike = round(ltp / interval) * interval
         strike_col1, strike_col2 = st.columns(2)
@@ -2673,7 +2598,7 @@ def render_options_strategies():
         elif selected_strategy == "Short Strangle":
             legs = [{"type": "CE", "strike": selected_strike + interval, "action": "SELL", "qty": total_qty, "leg": "Call Leg"}, {"type": "PE", "strike": selected_strike - interval, "action": "SELL", "qty": total_qty, "leg": "Put Leg"}]
         elif selected_strategy == "Iron Butterfly":
-            legs = [{"type": "CE", "strike": selected_strike - interval, "action": "BUY", "qty": total_qty, "leg": "Lower Wing"}, {"type": "CE", "strike": selected_strike, "action": "SELL", "qty": total_qty, "leg": "Body Call"}, {"type": "PE", "strike": selected_strike, "action": "SELL", "qty": total_qty, "leg": "Body Put"}, {"type": "PE", "strike": selected_strike + interval, "action": "BUY", "qty": total_qty, "leg": "Upper Wing"}]
+            legs = [{"type": "PE", "strike": selected_strike - interval, "action": "BUY", "qty": total_qty, "leg": "Lower Wing"}, {"type": "CE", "strike": selected_strike, "action": "SELL", "qty": total_qty, "leg": "Body Call"}, {"type": "PE", "strike": selected_strike, "action": "SELL", "qty": total_qty, "leg": "Body Put"}, {"type": "CE", "strike": selected_strike + interval, "action": "BUY", "qty": total_qty, "leg": "Upper Wing"}]
         elif selected_strategy == "Iron Condor":
             legs = [{"type": "CE", "strike": selected_strike + (2*interval), "action": "BUY", "qty": total_qty, "leg": "Upper Call Wing"}, {"type": "CE", "strike": selected_strike + interval, "action": "SELL", "qty": total_qty, "leg": "Short Call"}, {"type": "PE", "strike": selected_strike - interval, "action": "SELL", "qty": total_qty, "leg": "Short Put"}, {"type": "PE", "strike": selected_strike - (2*interval), "action": "BUY", "qty": total_qty, "leg": "Lower Put Wing"}]
         if legs:
@@ -2769,7 +2694,7 @@ def render_strategy_lab():
     - **Consecutive Losses**: Auto-trading stops after N consecutive losses
     - **Rate Limiting**: Prevents API flooding and broker bans
     - **Market Hours**: Orders rejected outside 9:15 AM — 3:30 PM IST
-    - **Symbol Mapping**: Verify all symbols are mapped to Paytm Money security IDs before going live
+    - **Symbol Mapping**: Verify all symbols are mapped to DhanHQ security IDs before going live
     """)
     st.session_state.strategy_params = p
     if st.button("💾 Save Parameters", use_container_width=True):
@@ -2805,244 +2730,20 @@ def render_strategy_lab():
     """)
 
 
-
 # ───────────────────────────────────────────
-# PAYTM MONEY CONNECT PAGE (PRIMARY BROKER)
-# ───────────────────────────────────────────
-
-def render_paytm_connect():
-    st.header("💰 Paytm Money Connect — PRIMARY BROKER")
-
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #e0f2fe, #bae6fd); border: 2px solid #0ea5e9; border-radius: 16px; padding: 20px; margin-bottom: 24px;">
-        <h3 style="margin:0 0 8px 0; color:#0369a1;">💰 Paytm Money API Integration</h3>
-        <p style="margin:0; color:#0c4a6e; font-size:15px;">
-        <b>Paytm Money is your PRIMARY broker.</b> Connect your account for live trading. 
-        Get API credentials from <a href="https://developer.paytmmoney.com/">Paytm Money Developer Portal</a>.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if not PAYTM_AVAILABLE:
-        st.error("❌ pyPMClient library not installed.")
-        st.code("pip install pyPMClient", language="bash")
-        return
-
-    # Connection status
-    if st.session_state.paytm_connected:
-        st.success("✅ Connected to Paytm Money!")
-    else:
-        st.warning("⚠️ Not connected to Paytm Money")
-
-    st.divider()
-    st.subheader("🔧 API Configuration")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.paytm_api_key = st.text_input(
-            "API Key",
-            value=st.session_state.paytm_api_key or st.secrets.get("PAYTM_API_KEY", ""),
-            help="From Paytm Money Developer Portal"
-        )
-    with col2:
-        st.session_state.paytm_api_secret = st.text_input(
-            "API Secret",
-            value=st.session_state.paytm_api_secret or st.secrets.get("PAYTM_API_SECRET", ""),
-            type="password",
-            help="From Paytm Money Developer Portal"
-        )
-
-    # Login flow
-    st.markdown("---")
-    st.subheader("🔐 Login Flow")
-
-    st.info("""
-    **Paytm Money Login Steps:**
-    1. Enter API Key and Secret above
-    2. Click "Generate Login URL" 
-    3. Login on Paytm Money website
-    4. Copy the `request_token` from the callback URL
-    5. Paste it below and click "Connect"
-    """)
-
-    if st.button("🔗 Generate Login URL", type="primary", use_container_width=True):
-        if st.session_state.paytm_api_key and st.session_state.paytm_api_secret:
-            try:
-                # Use PMClient login method (returns URL string)
-                temp_client = PMClient(
-                    api_key=st.session_state.paytm_api_key, 
-                    api_secret=st.session_state.paytm_api_secret
-                )
-                login_url = temp_client.login(state_key="jvx_terminal")
-                st.markdown(f"### [👉 CLICK HERE TO LOGIN ON PAYTM MONEY]({login_url})")
-                st.code(login_url, language="text")
-                st.caption("After login, you'll be redirected. Copy the `request_token` from the URL.")
-            except Exception as e:
-                st.error(f"Error generating login URL: {e}")
-        else:
-            st.error("Enter API Key and Secret first!")
-
-    request_token = st.text_input(
-        "Request Token (from callback URL)",
-        value="",
-        type="password",
-        help="Looks like: abc123def456ghi789"
-    )
-
-    if st.button("💰 Connect to Paytm Money", type="primary", use_container_width=True):
-        if not st.session_state.paytm_api_key or not st.session_state.paytm_api_secret:
-            st.error("Enter API Key and Secret first!")
-        elif not request_token:
-            st.error("Enter Request Token from callback URL!")
-        else:
-            with st.spinner("Connecting to Paytm Money..."):
-                success, msg = paytm_manager.connect(
-                    st.session_state.paytm_api_key,
-                    st.session_state.paytm_api_secret,
-                    request_token
-                )
-            if success:
-                st.success("✅ Connected to Paytm Money!")
-                st.json(msg)
-                st.session_state.selected_broker = 'PAYTM'
-                st.session_state.live_data_source = 'PAYTM'
-            else:
-                st.error(f"❌ Connection failed: {msg}")
-
-    # Alternative: Connect with existing tokens
-    st.divider()
-    st.subheader("🔑 Connect with Existing Tokens")
-
-    col_t1, col_t2, col_t3 = st.columns(3)
-    with col_t1:
-        access_token = st.text_input("Access Token", value=st.session_state.get('paytm_access_token', ''), type="password")
-    with col_t2:
-        public_access_token = st.text_input("Public Access Token", value=st.session_state.get('paytm_public_access_token', ''), type="password")
-    with col_t3:
-        read_access_token = st.text_input("Read Access Token", value=st.session_state.get('paytm_read_access_token', ''), type="password")
-
-    if st.button("🔑 Connect with Tokens", use_container_width=True):
-        if access_token and st.session_state.paytm_api_key and st.session_state.paytm_api_secret:
-            st.session_state.paytm_access_token = access_token
-            st.session_state.paytm_public_access_token = public_access_token
-            st.session_state.paytm_read_access_token = read_access_token
-            with st.spinner("Connecting with tokens..."):
-                success, msg = paytm_manager.connect_with_tokens(
-                    st.session_state.paytm_api_key,
-                    st.session_state.paytm_api_secret,
-                    access_token,
-                    public_access_token,
-                    read_access_token
-                )
-            if success:
-                st.success("✅ Connected to Paytm Money with tokens!")
-                st.session_state.selected_broker = 'PAYTM'
-                st.session_state.live_data_source = 'PAYTM'
-            else:
-                st.error(f"❌ Connection failed: {msg}")
-        else:
-            st.error("Enter API Key, Secret and Access Token!")
-
-    # Symbol Mapping Status
-    st.divider()
-    st.subheader("📋 Paytm Money Symbol Mapping Status")
-    st.markdown("Verify all your watchlist symbols are mapped to Paytm Money security IDs:")
-
-    mapping_status = []
-    for sym in st.session_state.watchlist:
-        mapped = PAYTM_SYMBOL_MAP.get(sym)
-        if mapped:
-            mapping_status.append({
-                "Symbol": sym,
-                "Security ID": mapped["security_id"],
-                "Exchange": mapped["exchange"],
-                "Segment": mapped["segment"],
-                "Status": "✅ Mapped"
-            })
-        else:
-            mapping_status.append({
-                "Symbol": sym,
-                "Security ID": "—",
-                "Exchange": "—",
-                "Segment": "—",
-                "Status": "❌ Not Mapped"
-            })
-
-    st.dataframe(pd.DataFrame(mapping_status), use_container_width=True, hide_index=True)
-
-    if any(m["Status"] == "❌ Not Mapped" for m in mapping_status):
-        st.warning("⚠️ Some symbols are not mapped. Add them to PAYTM_SYMBOL_MAP before live trading.")
-        st.code("""
-PAYTM_SYMBOL_MAP = {
-    "YOUR_SYMBOL": {"security_id": "12345", "exchange": "NSE", "segment": "E"},
-    # segment: "E" = Equity, "I" = Index, "D" = Derivatives
-    # Add more symbols here...
-}
-        """)
-
-    # Account Info
-    if st.session_state.paytm_connected:
-        st.divider()
-        st.subheader("💼 Account Info")
-
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            if st.button("📊 Funds Summary", use_container_width=True):
-                try:
-                    funds = paytm_manager.get_fund_limits()
-                    st.session_state.paytm_funds = funds
-                    st.json(funds)
-                except Exception as e:
-                    st.error(str(e))
-        with c2:
-            if st.button("📈 Positions", use_container_width=True):
-                try:
-                    positions = paytm_manager.get_positions()
-                    st.session_state.paytm_positions = positions
-                    st.json(positions)
-                except Exception as e:
-                    st.error(str(e))
-        with c3:
-            if st.button("📋 Order Book", use_container_width=True):
-                try:
-                    orders = paytm_manager.get_order_book()
-                    st.json(orders)
-                except Exception as e:
-                    st.error(str(e))
-
-        if st.button("📊 Test Quote (RELIANCE)", use_container_width=True):
-            try:
-                quote = paytm_manager.get_quote("RELIANCE")
-                st.json(quote)
-            except Exception as e:
-                st.error(str(e))
-
-        if st.button("🧹 Disconnect", use_container_width=True):
-            st.session_state.paytm_connected = False
-            st.session_state.paytm_client = None
-            st.session_state.paytm_access_token = ''
-            st.session_state.paytm_public_access_token = ''
-            st.session_state.paytm_read_access_token = ''
-            st.session_state.paytm_funds = None
-            st.session_state.paytm_positions = None
-            st.session_state.live_data_source = 'SIMULATED'
-            st.rerun()
-
-
-# ───────────────────────────────────────────
-# DHANHQ CONNECT PAGE (SECONDARY)
+# DHANHQ CONNECT PAGE (PRIMARY BROKER)
 # ───────────────────────────────────────────
 
 def render_dhan_connect():
-    st.header("🔐 DhanHQ Connection — SECONDARY BROKER")
+    st.header("🔐 DhanHQ Connection — PRIMARY BROKER")
 
     if not DHANHQ_AVAILABLE:
         st.error("❌ dhanhq library not installed.")
         st.code("pip install dhanhq", language="bash")
         return
 
-    st.session_state.dhan_client_id = st.text_input("DhanHQ Client ID", value=st.session_state.dhan_client_id or st.secrets.get("DHAN_CLIENT_ID", ""))
-    st.session_state.dhan_access_token = st.text_input("DhanHQ Access Token", value=st.session_state.dhan_access_token or st.secrets.get("DHAN_ACCESS_TOKEN", ""), type="password")
+    st.session_state.dhan_client_id = st.text_input("DhanHQ Client ID", value=st.session_state.dhan_client_id or st.secrets.get("DHAN_CLIENT_ID", os.environ.get("DHAN_CLIENT_ID", "")))
+    st.session_state.dhan_access_token = st.text_input("DhanHQ Access Token", value=st.session_state.dhan_access_token or st.secrets.get("DHAN_ACCESS_TOKEN", os.environ.get("DHAN_ACCESS_TOKEN", "")), type="password")
 
     if st.button("🔗 Connect to DhanHQ", type="primary", use_container_width=True):
         with st.spinner("Connecting..."):
@@ -3104,8 +2805,9 @@ DHAN_SYMBOL_MAP = {
             st.session_state.dhan_client = None
             st.session_state.dhan_funds = None
             if st.session_state.live_data_source == 'DHANHQ':
-                st.session_state.live_data_source = 'SIMULATED'
+                st.session_state.live_data_source = 'YAHOO'
             st.rerun()
+
 # ───────────────────────────────────────────
 # 0DTE (ZERO DAYS TO EXPIRY) SCANNER
 # ───────────────────────────────────────────
@@ -3255,7 +2957,6 @@ def render_ml_pipeline():
 
     tab1, tab2, tab3, tab4 = st.tabs(["1️⃣ Data", "2️⃣ Feature Engineering", "3️⃣ Model", "4️⃣ Trade Engine"])
 
-    # ---------- STEP 1: DATA ----------
     with tab1:
         st.subheader("📊 Historical OHLC + Volume")
         st.dataframe(raw_df.tail(20)[['Open', 'High', 'Low', 'Close', 'Volume']].reset_index(drop=True),
@@ -3274,7 +2975,6 @@ def render_ml_pipeline():
         ic2.metric("EMA Fast / Slow", f"{ind_df['EMA_FAST'].iloc[-1]:.1f} / {ind_df['EMA_SLOW'].iloc[-1]:.1f}")
         ic3.metric("ATR (latest)", f"{ind_df['ATR'].iloc[-1]:.2f}")
 
-    # ---------- STEP 2: FEATURE ENGINEERING ----------
     feat_df = ml_build_features(raw_df)
     with tab2:
         st.subheader("🧮 Engineered Features")
@@ -3297,7 +2997,6 @@ def render_ml_pipeline():
             st.info("Need more historical data before the Trade Engine can run — see Step 2.")
         return
 
-    # ---------- STEP 3: MODEL ----------
     with tab3:
         st.subheader("🧠 Model")
         model_options = ["Random Forest"]
@@ -3357,7 +3056,6 @@ def render_ml_pipeline():
         else:
             st.info("Click '🚀 Train Model' to fit it on this symbol's historical features.")
 
-    # ---------- STEP 4: TRADE ENGINE ----------
     with tab4:
         st.subheader("⚙️ Trade Engine")
         trained_ready = (
@@ -3658,7 +3356,7 @@ def render_tradingview_chart():
         st.metric("Signal", latest['Signal'])
         st.metric("Confidence", f"{latest['Confidence']:.0f}%")
 
-        side = st.segmented_control("Action", ["BUY", "SELL"], default="BUY")
+        side = st.radio("Action", ["BUY", "SELL"], horizontal=True)
         qty = st.number_input("Qty", min_value=1, value=1)
 
         if st.button("📤 PLACE ORDER", type="primary", use_container_width=True):
@@ -3920,7 +3618,7 @@ def render_david_strategy():
 
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SENKOU_A'], line=dict(color='green', width=1), name='Senkou A', fill='tonexty', fillcolor='rgba(0,255,0,0.1)'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SENKOU_B'], line=dict(color='red', width=1), name='Senkou B', fill='tonexty', fillcolor='rgba(255,0,0,0.1)'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['SENKOU_B'], line=dict(color='red', width=1), name='Senkou B'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['TENKAN'], line=dict(color='blue', width=1.5), name='Tenkan-sen'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['KIJUN'], line=dict(color='maroon', width=1.5), name='Kijun-sen'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['ATR_UPPER'], line=dict(color='purple', width=1, dash='dash'), name='ATR Upper (3x)', opacity=0.6), row=1, col=1)
@@ -4267,14 +3965,14 @@ def render_telegram_bot():
     with col1:
         st.session_state.telegram_bot_token = st.text_input(
             "🤖 Bot Token",
-            value=st.session_state.get('telegram_bot_token', st.secrets.get("TELEGRAM_BOT_TOKEN", '')),
+            value=st.session_state.get('telegram_bot_token', st.secrets.get("TELEGRAM_BOT_TOKEN", os.environ.get("TELEGRAM_BOT_TOKEN", ''))),
             type="password",
             help="Get this from @BotFather"
         )
     with col2:
         st.session_state.telegram_chat_id = st.text_input(
             "👤 Chat ID",
-            value=st.session_state.get('telegram_chat_id', st.secrets.get("TELEGRAM_CHAT_ID", '')),
+            value=st.session_state.get('telegram_chat_id', st.secrets.get("TELEGRAM_CHAT_ID", os.environ.get("TELEGRAM_CHAT_ID", ''))),
             help="Get this from @userinfobot"
         )
 
@@ -4290,7 +3988,7 @@ def render_telegram_bot():
         if st.button("📤 Send Test Message", type="primary", use_container_width=True):
             if st.session_state.telegram_bot_token and st.session_state.telegram_chat_id:
                 test_msg = f"""
-🤖 *JVX PaytmMoney Bot Test*
+🤖 *JVX Trading Bot Test*
 
 ✅ Bot is working correctly!
 📅 Date: {datetime.now().strftime('%d %b %Y')}
@@ -4578,7 +4276,7 @@ def format_ideas_text(ideas):
     time_str = datetime.now().strftime("%I:%M %p")
 
     lines = [
-        "🎯 *JVX Paytm — TOP 10 TRADING IDEAS*",
+        "🎯 *JVX Trading Terminal — TOP 10 TRADING IDEAS*",
         f"📅 Date: {date_str}",
         f"⏰ Time: {time_str}",
         f"📊 Market Status: {'Open' if is_market_open()[0] else 'Closed'}",
@@ -4608,7 +4306,7 @@ def format_ideas_text(ideas):
         "• Risk only 1-2% per trade",
         "• Past performance ≠ future results",
         "",
-        "🤖 Powered by JVX PaytmMoney Terminal",
+        "🤖 Powered by JVX Trading Terminal",
         "📲 Developed by Hitesh Vidhani",
     ])
 
@@ -4632,14 +4330,13 @@ def render_automated_algo_trading():
 
     st.info("⚠️ Automated trading carries risk. Always test on PAPER mode before going LIVE.")
 
-    broker = st.session_state.get('selected_broker', 'PAYTM')
+    broker = st.session_state.get('selected_broker', 'DHANHQ')
     mode   = st.session_state.get('exec_mode', 'PAPER')
     mode_color = "#16a34a" if mode == "PAPER" else "#dc2626"
     st.markdown(f"**Broker:** `{broker}` &nbsp;|&nbsp; **Mode:** <span style='color:{mode_color};font-weight:700;'>{mode}</span>", unsafe_allow_html=True)
 
     st.divider()
 
-    # ── Algo Catalogue ──
     st.subheader("📚 Available Algorithms")
     algos = [
         {"name": "Multi-Confirmation Pro",  "type": "Intraday",    "asset": "Equities/Index", "win_rate": "68%", "sharpe": "1.42", "max_dd": "8.2%",  "status": "Ready", "color": "#16a34a"},
@@ -4672,7 +4369,6 @@ def render_automated_algo_trading():
 
     st.divider()
 
-    # ── Active Deployments ──
     st.subheader("⚡ Active Deployments")
     active = [k.replace("algo_deployed_", "") for k, v in st.session_state.items() if k.startswith("algo_deployed_") and v]
     if not active:
@@ -4691,7 +4387,6 @@ def render_automated_algo_trading():
 
     st.divider()
 
-    # ── Order Slicing & Multi-Target ──
     st.subheader("🔪 Auto Order Slicing & Multi-Target")
     s1, s2, s3 = st.columns(3)
     with s1:
@@ -4729,7 +4424,6 @@ def render_realtime_algo_signals():
     symbols = st.session_state.watchlist
     now = datetime.now()
 
-    # Generate live-like signals
     signals = []
     for sym in symbols:
         df = st.session_state.market_data.get(sym)
@@ -4751,7 +4445,6 @@ def render_realtime_algo_signals():
 
     active_signals = [s for s in signals if s['signal'] != 'WAIT']
 
-    # Summary bar
     buy_count  = len([s for s in active_signals if s['signal'] == 'BUY'])
     sell_count = len([s for s in active_signals if s['signal'] == 'SELL'])
     cm1, cm2, cm3, cm4 = st.columns(4)
@@ -4766,7 +4459,6 @@ def render_realtime_algo_signals():
         st.info("No strong signals right now. Market may be consolidating.")
         return
 
-    # Signal cards
     for s in active_signals:
         bg   = "#f0fdf4" if s['signal'] == 'BUY' else "#fff1f2"
         bdr  = "#16a34a" if s['signal'] == 'BUY' else "#dc2626"
@@ -4791,7 +4483,7 @@ def render_realtime_algo_signals():
     st.divider()
     st.subheader("📲 Push to Telegram")
     if st.button("📤 Send All Active Signals to Telegram", use_container_width=True):
-        tg_token = st.session_state.get('telegram_token', '')
+        tg_token = st.session_state.get('telegram_bot_token', '')
         tg_chat  = st.session_state.get('telegram_chat_id', '')
         if tg_token and tg_chat:
             msg_lines = ["📡 *JVX Real-Time Algo Signals*", f"⏰ {now.strftime('%d %b %Y %H:%M:%S')}", ""]
@@ -4830,7 +4522,7 @@ def render_strategy_market_scanner():
 
     col_sym, col_tf, col_scan = st.columns([2, 1, 1])
     with col_sym:
-        scan_symbols = st.multiselect("Symbols to Scan", list(PAYTM_SYMBOL_MAP.keys()),
+        scan_symbols = st.multiselect("Symbols to Scan", list(SYMBOL_MAP.keys()),
                                       default=st.session_state.watchlist[:8])
     with col_tf:
         st.selectbox("Timeframe", ["5m", "10m", "15m"], index=0, key="scanner_tf")
@@ -4871,7 +4563,6 @@ def render_strategy_market_scanner():
             vol_ratio = float(df['Volume'].tail(5).mean() / (df['Volume'].tail(20).mean() + 1e-9))
             bb_width  = rng5 / (close + 1e-9) * 100
 
-            # Score each strategy
             scores = {}
             scores["Mean Reversion"]   = max(0, min(100, int(80 - bb_width*10 + (50 - abs(50 - np.random.uniform(30, 70))))))
             scores["Breakout"]         = max(0, min(100, int(vol_ratio * 40 + bb_width * 5 + np.random.randint(20, 50))))
@@ -4908,7 +4599,6 @@ def render_strategy_market_scanner():
             styled = results_df.style.applymap(colour_signal, subset=['Signal'])
             st.dataframe(styled, use_container_width=True, hide_index=True)
 
-            # Top pick
             top = results[0]
             st.success(f"🏆 Top Pick: **{top['Symbol']}** via *{top['Best Strategy']}* — Signal: {top['Signal']} | Est. 5-min profit: {top['Est. Profit (5m%)']}%")
         else:
@@ -4978,7 +4668,6 @@ def render_algo_portfolio():
         fig_corr.update_layout(template='plotly_white', height=350, margin=dict(l=0, r=0, t=20, b=0))
         st.plotly_chart(fig_corr, use_container_width=True)
 
-        # Simulated blended equity curve
         st.subheader("📈 Blended Portfolio Equity Curve")
         n = 252
         equity = [100000.0]
@@ -5047,7 +4736,7 @@ def render_custom_strategy_builder():
         mc1, mc2, mc3 = st.columns(3)
         strat_name = mc1.text_input("Strategy Name", value="My Custom Algo")
         strat_type = mc2.selectbox("Type", ["Intraday", "Swing Trade", "Scalping", "Options"])
-        strat_sym  = mc3.multiselect("Apply To", list(PAYTM_SYMBOL_MAP.keys())[:15], default=["RELIANCE", "HDFCBANK"])
+        strat_sym  = mc3.multiselect("Apply To", list(SYMBOL_MAP.keys())[:15], default=["RELIANCE", "HDFCBANK"])
 
         ca, cb = st.columns(2)
         if ca.button("🧪 Backtest Strategy", use_container_width=True):
@@ -5122,31 +4811,26 @@ def render_order_book():
     </div>
     """, unsafe_allow_html=True)
 
-    broker = st.session_state.get('selected_broker', 'PAYTM')
+    broker = st.session_state.get('selected_broker', 'DHANHQ')
 
-    # Fetch live order book from broker
     live_orders = []
-    if broker == 'PAYTM' and st.session_state.get('paytm_connected') and paytm_manager.client:
+    if broker == 'DHANHQ' and st.session_state.get('dhan_connected') and dhan_manager.client:
         try:
-            ob = paytm_manager.get_order_book()
+            ob = dhan_manager.get_order_book()
             if ob and isinstance(ob, dict):
                 live_orders = ob.get('data', [])
         except:
             pass
 
-    # Merge with session trade history
     history = st.session_state.get('trade_history', [])
 
-    # Filter controls
     fc1, fc2, fc3, fc4 = st.columns(4)
     filter_side   = fc1.selectbox("Side",   ["All", "BUY", "SELL"])
     filter_status = fc2.selectbox("Status", ["All", "PAPER_EXECUTED", "EXECUTED", "PENDING", "CANCELLED"])
     filter_sym    = fc3.text_input("Symbol filter", value="")
     export_btn    = fc4.button("⬇️ Export CSV", use_container_width=True)
 
-    # Build display table
     rows = []
-    # From trade history
     for i, t in enumerate(reversed(history), 1):
         sym = t.get('Symbol', t.get('symbol', ''))
         if filter_sym and filter_sym.upper() not in sym.upper():
@@ -5173,7 +4857,6 @@ def render_order_book():
             "Source": "Session",
         })
 
-    # From live broker orders
     for order in live_orders:
         sym = order.get('symbol', order.get('scrip_code', ''))
         if filter_sym and filter_sym.upper() not in sym.upper():
@@ -5209,7 +4892,6 @@ def render_order_book():
             csv = order_df.to_csv(index=False)
             st.download_button("📥 Download Order Book CSV", csv, "order_book.csv", "text/csv")
 
-        # Summary
         st.divider()
         total_trades = len(rows)
         wins   = len([r for r in rows if r.get('Outcome') == 'WIN'])
@@ -5268,7 +4950,6 @@ def render_nse_bse_intelligence():
             st.metric("52-Week Highs", bse_high)
             st.metric("52-Week Lows",  bse_low)
 
-        # Sector heatmap
         st.subheader("🌡️ Sector Performance")
         sectors = {"NIFTYBANK": 0.82, "NIFTYIT": -0.43, "NIFTYAUTO": 1.21, "NIFTYPHARMA": -0.18,
                    "NIFTYFMCG": 0.55, "NIFTYMETAL": 2.14, "NIFTYREALTY": 1.63, "NIFTYENERGY": 0.91,
@@ -5353,7 +5034,6 @@ def render_fii_dii_tracker():
 
     st.divider()
 
-    # Simulated FII/DII daily data
     days = pd.date_range(end=datetime.now(), periods=22, freq='B')
     fii_flows = np.random.normal(300, 800, len(days))
     dii_flows = -fii_flows * 0.6 + np.random.normal(100, 200, len(days))
@@ -5366,7 +5046,6 @@ def render_fii_dii_tracker():
         'Net Flow (₹ Cr)': net_flows.round(2),
     })
 
-    # Summary metrics
     total_fii = fii_flows.sum()
     total_dii = dii_flows.sum()
     sm1, sm2, sm3, sm4 = st.columns(4)
@@ -5375,7 +5054,6 @@ def render_fii_dii_tracker():
     sm3.metric("Net MTD",  f"₹{net_flows.sum():,.0f} Cr")
     sm4.metric("FII Days Positive", f"{(fii_flows > 0).sum()}/{len(days)}")
 
-    # Flow chart
     fig = go.Figure()
     fii_colors = ['#16a34a' if v > 0 else '#dc2626' for v in fii_flows]
     dii_colors = ['#0ea5e9' if v > 0 else '#f97316' for v in dii_flows]
@@ -5388,7 +5066,6 @@ def render_fii_dii_tracker():
                       margin=dict(l=0, r=0, t=40, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-    # FII/DII Cumulative
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(x=flow_df['Date'], y=np.cumsum(fii_flows), mode='lines', name='FII Cumul.', line=dict(color='#16a34a', width=2)))
     fig2.add_trace(go.Scatter(x=flow_df['Date'], y=np.cumsum(dii_flows), mode='lines', name='DII Cumul.', line=dict(color='#0ea5e9', width=2)))
@@ -5396,7 +5073,6 @@ def render_fii_dii_tracker():
                        margin=dict(l=0, r=0, t=40, b=0))
     st.plotly_chart(fig2, use_container_width=True)
 
-    # Data table
     st.subheader("📋 Daily FII/DII Data")
     def colour_fii_dii(val):
         try:
@@ -5421,15 +5097,16 @@ def render_volume_dividend():
     </div>
     """, unsafe_allow_html=True)
 
+    months = ["January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"]
+
     tab1, tab2 = st.tabs(["📈 Big Volume Alerts", "💰 Dividend Calendar"])
 
     with tab1:
         st.subheader("📈 Big Volume Movers")
         vc1, vc2, vc3 = st.columns(3)
-        vol_sym = vc1.multiselect("Symbols", list(PAYTM_SYMBOL_MAP.keys()),
+        vol_sym = vc1.multiselect("Symbols", list(SYMBOL_MAP.keys()),
                                   default=["RELIANCE", "HDFCBANK", "INFY", "TCS", "SBIN", "ICICIBANK"])
-        months  = ["January", "February", "March", "April", "May", "June",
-                   "July", "August", "September", "October", "November", "December"]
         v_month = vc2.selectbox("Month", months, index=datetime.now().month - 1)
         v_thresh= vc3.slider("Volume Threshold (x avg)", 1.0, 5.0, 2.0, 0.5)
 
@@ -5441,7 +5118,7 @@ def render_volume_dividend():
             avg_vol   = float(df['Volume'].tail(20).mean())
             curr_vol  = float(df['Volume'].iloc[-1])
             vol_ratio = curr_vol / max(avg_vol, 1)
-            ltp       = float(df['Close'].iloc[-1])
+            ltp       = float(df['Volume'].iloc[-1])
             chg_pct   = round((float(df['Close'].iloc[-1]) - float(df['Close'].iloc[-5])) / float(df['Close'].iloc[-5]) * 100, 2)
             flag      = "🔥 Big Volume" if vol_ratio >= v_thresh else "Normal"
             vol_data.append({
@@ -5460,7 +5137,6 @@ def render_volume_dividend():
                 return 'color:#ef4444;font-weight:700;' if 'Big' in str(val) else ''
             st.dataframe(vol_df.style.applymap(style_alert, subset=['Alert']), use_container_width=True, hide_index=True)
 
-        # Volume chart
         st.subheader("📊 Volume Trend Chart")
         chart_sym = st.selectbox("Select Symbol for Volume Chart", st.session_state.watchlist)
         df_v = st.session_state.market_data.get(chart_sym)
@@ -5496,7 +5172,6 @@ def render_volume_dividend():
 
         st.dataframe(dividend_data, use_container_width=True, hide_index=True)
 
-        # Total dividend income calculator
         st.subheader("🧮 Dividend Income Calculator")
         di1, di2 = st.columns(2)
         portfolio_value = di1.number_input("Portfolio Value (₹)", value=500000, step=50000)
@@ -5513,8 +5188,8 @@ def render_zerodha_connect():
     st.info("Connect to Zerodha for live trading via Kite Connect API.")
     with st.container(border=True):
         z1, z2 = st.columns(2)
-        api_key    = z1.text_input("Kite API Key",    type="password", value=st.session_state.get('zerodha_api_key', ''))
-        api_secret = z2.text_input("Kite API Secret", type="password", value=st.session_state.get('zerodha_secret', ''))
+        api_key    = z1.text_input("Kite API Key",    type="password", value=st.session_state.get('zerodha_api_key', os.environ.get("ZERODHA_API_KEY", '')))
+        api_secret = z2.text_input("Kite API Secret", type="password", value=st.session_state.get('zerodha_secret', os.environ.get("ZERODHA_API_SECRET", '')))
         request_token = st.text_input("Request Token (from Kite login URL)")
         if st.button("🔗 Connect Zerodha", type="primary", use_container_width=True):
             if api_key and api_secret:
@@ -5546,8 +5221,8 @@ def render_angel_connect():
     st.info("Connect to Angel One via SmartAPI for live order execution.")
     with st.container(border=True):
         a1, a2 = st.columns(2)
-        api_key   = a1.text_input("SmartAPI Key",   type="password", value=st.session_state.get('angel_api_key', ''))
-        client_id = a2.text_input("Client ID",                       value=st.session_state.get('angel_client_id', ''))
+        api_key   = a1.text_input("SmartAPI Key",   type="password", value=st.session_state.get('angel_api_key', os.environ.get("ANGEL_API_KEY", '')))
+        client_id = a2.text_input("Client ID",                       value=st.session_state.get('angel_client_id', os.environ.get("ANGEL_CLIENT_ID", '')))
         a3, a4 = st.columns(2)
         password  = a3.text_input("Trading Password", type="password")
         totp_code = a4.text_input("TOTP (if enabled)")
@@ -5698,8 +5373,6 @@ elif menu == "📊 Volume & Dividend":
     render_volume_dividend()
 elif menu == "📲 Telegram Bot":
     render_telegram_bot()
-elif menu == "💰 Paytm Money Connect":
-    render_paytm_connect()
 elif menu == "🔐 DhanHQ Connect":
     render_dhan_connect()
 elif menu == "🔑 Zerodha Connect":
