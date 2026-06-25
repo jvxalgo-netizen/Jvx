@@ -1,26 +1,34 @@
-🚀 JVX Hybrid Terminal
-1. The Hook 
+Metadata-Version: 2.4
+Name: pyPMClient
+Version: 0.1.0
+Summary: Paytm Money API client package
+Author: Hitesh Vidhani
+License: MIT
+Project-URL: Homepage, https://github.com/jvxalgo-netizen/Jvx
+Keywords: paytmmoney,trading,api,pmclient
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE.txt
+Requires-Dist: requests>=2.28.0
+Requires-Dist: httpx~=0.23.3
+Requires-Dist: websocket-client~=1.5.0
+Dynamic: license-file
+Dynamic: requires-python
 
-"JVX is a next-generation hybrid algorithmic trading terminal designed to bring institutional-grade, emotionless execution to retail and pro-level traders."
+# The Paytm Money Equity 1.1.4 API Python client
 
-2. The Problem 
-Retail trading space mein 90% traders apna paisa loose karte hain. Iska sabse bada kaaran strategy nahi, balki human emotions (Fear & Greed) aur manual execution ki slow speed hai. Retailers ke paas aisi koi unified hybrid screen nahi hai jahan woh complex risk management ke sath seamless automated options aur equity trading kar sakein.
+The official Python client for communicating with [PaytmMoney Equity API](https://www.paytmmoney.com/stocks/).
 
-3. The Solution 
-JVX ek cutting-edge Python-backed terminal hai jo direct broker APIs ke through market se judta hai. Yeh manual trading ke darr ko hata kar pure data-driven execution karta hai. Ek deep financial aur accounting understanding ke sath banaya gaya yeh system, blind speculation ke bajaye strict mathematical risk-to-reward ratio par focus karta hai.
 
-4. Key Value Propositions 
-Multi-Broker API Ecosystem: Seamless integration with top brokers like DhanHQ, Zerodha, and Angel One for ultra-fast order routing.
+# Description
 
-Advanced Strategy Execution: Built-in high-win-rate algorithmic models including Multi-Confirmation Strategies, T3/UT Bots, and AI-optimized Super Trend logic.
+PMClient is a set of REST-like APIs that expose many capabilities required to build a complete investment and
+trading platform. Execute orders in real time, manage user portfolio, stream live market data (WebSockets), and more, with the simple HTTP API collection.
 
-Smart Risk Management: Automated position sizing and capital protection protocols to ensure survival during high market volatility.
 
-Dynamic Options Builder: Advanced tools to deploy and hedge complex options strategies instantly.
+[PaytmMoney Technology Pvt Ltd](https://www.paytmmoney.com/) (c) 2022. Licensed under the MIT License.
 
-<<<<<<< HEAD
-Production Safety & Hybrid Control: Gives the trader the flexibility of an algo's speed with the oversight of a manual safety switch (Hybrid Model).
-=======
+
 ## Api Documentation
 
 - [PaytmMoney API documentation](https://developer.paytmmoney.com/docs/api/logout/)
@@ -50,7 +58,7 @@ pip install dhanhq
 ### API Usage
 
 ```python
-from pmClient import PMClient
+from pyPMClient import PMClient
 ```
 
 
@@ -496,4 +504,3 @@ webSocketClient.connect()
 # To explicitly close websocket connection with server, call this method
 webSocketClient.disconnect()
 ```
->>>>>>> 82ba586 (Saving work from codespace)

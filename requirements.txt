@@ -1,6 +1,17 @@
+streamlit~=1.30.0
+pandas~=2.1.0
+numpy~=1.26.0
+requests~=2.31.0
+plotly~=5.18.0
+scikit-learn~=1.3.0
 httpx~=0.23.3
-pytest~=7.0.1
 websocket-client~=1.5.0
-rel~=0.4.8
-mocker~=1.1.1
+
+# Optional ML / reinforcement learning dependencies
+# Install only when using the ML strategy pipeline or RL features:
+# pip install xgboost tensorflow stable-baselines3
+
+# Test dependencies
+pytest~=7.0.1
 pytest-mock~=3.10.0
+mocker~=1.1.1
