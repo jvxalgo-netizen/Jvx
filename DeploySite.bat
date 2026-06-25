@@ -1,0 +1,1 @@
+powershell -ExecutionPolicy Bypass -NoProfile -File "C:\Users\hitesh.v\videos\jvx\deploy.ps1"
